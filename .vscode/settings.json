@@ -1,0 +1,14 @@
+{
+    "python.linting.enabled": true,
+    "python.languageServer": "Pylance",
+    "python.linting.pylintEnabled": false,
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none"
+    },
+    "python.analysis.extraPaths": [
+        "",
+        "c:\\Users\\Ben\\.vscode\\extensions\\joedevivo.vscode-circuitpython-0.1.15\\stubs",
+        "c:\\Users\\Ben\\AppData\\Roaming\\Code\\User\\globalStorage\\joedevivo.vscode-circuitpython\\bundle\\20211202\\adafruit-circuitpython-bundle-py-20211202\\lib"
+    ],
+    "circuitpython.board.version": null
+}
