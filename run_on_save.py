@@ -26,7 +26,7 @@ from shutil import copyfile
 local_file_path = file_dir_name + "\\" + file_base_name
 _, _, sub_directory = file_dir_name.partition(workspace_folder)
 sub_directory = sub_directory[1:]  # strip leading slash
-remote_file_path = "E:\\" + sub_directory + "\\" + file_base_name
+remote_file_path = "D:\\" + sub_directory + "\\" + file_base_name
 
 with open(local_file_path) as f:
     first_line = f.readline()
