@@ -354,7 +354,7 @@ def watchdog():
             difference -= watchdog_settle_curve(elapsed_time_ns)
         # Check for stalls
         global watchdog_stalled_frames
-        if speed <= WATCHDOG_STALL_SPEED:
+        if abs(speed) <= WATCHDOG_STALL_SPEED:
             watchdog_stalled_frames += 1
         else:
             watchdog_stalled_frames = 0
