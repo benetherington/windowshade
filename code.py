@@ -177,6 +177,7 @@ def trapezoid_iter(target):
     # set initial values
     start = POS()
     _dir = copysign(1, target - start)
+    target = target - 10 * _dir  # stop a little short
 
     # set ramping parameters
     if abs(target - start) > RAMP_DISTANCE * 2:
