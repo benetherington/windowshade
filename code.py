@@ -41,7 +41,7 @@ WATCHDOG CONFIG
 watchdog_settle_curve = (
     lambda x: 50.3 + -3.86e-07 * x + 1.11e-15 * pow(x, 2) + -1.08e-24 * pow(x, 3)
 )
-WATCHDOG_SETTLE_FRAMES = 9
+WATCHDOG_SETTLE_NS = 4.9e8  # The point at which the curve is invalid
 WATCHDOG_ERROR = 15
 WATCHDOG_STALL_SPEED = 10
 WATCHDOG_STALLED_FRAME_ALLOWANCE = 2
@@ -296,7 +296,6 @@ watchdog_last_pos = None
 watchdog_throttle_stack = []
 watchdog_stalled_frames = 0
 watchdog_max_error = 0
-WATCHDOG_SETTLE_NS = WATCHDOG_SETTLE_FRAMES * CONTROL_FRAME_LENGTH_MS * 100_000
 
 
 def reset_watchdog():
