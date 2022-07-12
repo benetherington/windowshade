@@ -21,24 +21,30 @@ pixels[0] = (0, 0, 0)
 
 
 """
-Motion config
+MOTION CONFIG
 """
+CONTROL_FRAME_LENGTH_MS = 0.05
 MIN_THROTTLE = 0.4
 MAX_THROTTLE = 0.8
 RAMP_DISTANCE = 1000
+
+"""
+MOTOR CONFIG
+"""
 PWM_FREQUENCY = 500
 DECAY_MODE = SLOW_DECAY
 DEBUG_MOTOR = False
 
 """
-Watchdog config
+WATCHDOG CONFIG
 """
-# acceptable position error
+watchdog_settle_curve = (
+    lambda x: 50.3 + -3.86e-07 * x + 1.11e-15 * pow(x, 2) + -1.08e-24 * pow(x, 3)
+)
+WATCHDOG_SETTLE_FRAMES = 9
 WATCHDOG_ERROR = 15
-# acceptable error for low throttle (added to e
-LOW_THROTTLE_ADJUSTMENT = 20
-# acceptable number of frames with no movement
-STALLED_FRAMES_ALLOWANCE = 3
+WATCHDOG_STALL_SPEED = 10
+WATCHDOG_STALLED_FRAME_ALLOWANCE = 2
 
 
 """
@@ -234,9 +240,10 @@ def go_to(target):
     speed = throttle = None
     try:
         with MOTOR as m:
+            reset_watchdog()
             while True:
                 # check watchdog
-                watchdog_tick()
+                watchdog()
 
                 # set throttle
                 speed = next(speed_curve)
@@ -247,7 +254,7 @@ def go_to(target):
                 debug_log.append((monotonic_ns(), throttle, POS(), speed))
 
                 # wait a bit
-                sleep(0.1)
+                sleep(CONTROL_FRAME_LENGTH_MS)
     except StopIteration:
         # we're all good!
         print(f"We arrived at {POS()}!")
@@ -264,25 +271,45 @@ def go_to(target):
     debug_log.append((monotonic_ns(), throttle, POS(), speed))
 
 
+""" WatchdogException:
+    actual movement of 4 exceeds expected movement of -27.93 by 35.5861, an error of -1.274% """
+
 """
 WATCHDOG
 """
 # SETUP
-watchdog_state = {
-    "time": None,
-    "pos": None,
-    "throttle": None,
-}
+watchdog_start = None
+watchdog_last_time = None
+watchdog_last_pos = None
+watchdog_throttle_stack = []
 watchdog_stalled_frames = 0
 watchdog_max_error = 0
+WATCHDOG_SETTLE_NS = WATCHDOG_SETTLE_FRAMES * CONTROL_FRAME_LENGTH_MS * 100_000
 
 
 def reset_watchdog():
-    watchdog_state["pos"] = POS()
-    watchdog_state["throttle"] = MOTOR.throttle
-    watchdog_state["time"] = monotonic_ns()
-    global watchdog_stalled_frames
+    global watchdog_start, watchdog_last_time, watchdog_last_pos
+    watchdog_start = monotonic_ns()
+    watchdog_last_time = monotonic_ns()
+    watchdog_last_pos = POS()
+
+    global watchdog_throttle_stack, watchdog_stalled_frames
+    watchdog_throttle_stack = [0]
     watchdog_stalled_frames = 0
+
+
+def throttle_average():
+    return sum(watchdog_throttle_stack) / len(watchdog_throttle_stack)
+
+
+def add_watchdog_state():
+    global watchdog_last_time, watchdog_last_pos
+    watchdog_last_time = monotonic_ns()
+    watchdog_last_pos = POS()
+
+    while len(watchdog_throttle_stack) > 3:
+        watchdog_throttle_stack.pop(0)
+    watchdog_throttle_stack.append(MOTOR.throttle or 0)
 
 
 class WatchdogException(Exception):
@@ -290,73 +317,61 @@ class WatchdogException(Exception):
 
 
 # WATCHDOG
-def watchdog_tick():
-    # don't judge too early
-    if not watchdog_state["time"] or watchdog_state["throttle"]:
-        return reset_watchdog()
-
-    # what happened this time
-    delta_time = monotonic_ns() - watchdog_state["time"]
+def watchdog():
+    # What happened this time
+    delta_time = monotonic_ns() - watchdog_last_time
     if delta_time == 0:
         return
-    delta_pos = POS() - watchdog_state["pos"]
+    elapsed_time_ns = monotonic_ns() - watchdog_start
+    delta_pos = POS() - watchdog_last_pos
     speed = delta_pos / delta_time * 100_000_000
+    add_watchdog_state()
 
-    # what we expected to happen
-    non_zero_throttle = watchdog_state["throttle"] or MOTOR.throttle
-    if not non_zero_throttle:
-        # we shouldn't be moving.
+    # What we expected to happen
+    average_throttle = throttle_average()
+    if average_throttle == 0:
+        # We shouldn't be moving.
         expected_speed = 0
         difference = abs(delta_pos)
     else:
-        expected_speed = get_expected_speed(non_zero_throttle)
+        # Calculate difference
+        expected_speed = get_expected_speed(average_throttle)
         difference = abs(speed - expected_speed)
-        # check for stalled frames
-        if speed == 0:
+        # Low expectations when we're starting up
+        if elapsed_time_ns <= WATCHDOG_SETTLE_NS:
+            difference -= watchdog_settle_curve(elapsed_time_ns)
+        # Check for stalls
+        global watchdog_stalled_frames
+        if speed <= WATCHDOG_STALL_SPEED:
             watchdog_stalled_frames += 1
         else:
             watchdog_stalled_frames = 0
-        # low expectations for low throttles
-        if abs(non_zero_throttle) < 0.4:
-            difference -= LOW_THROTTLE_ADJUSTMENT
 
-    # how we feel about it
+    # Wow we feel about it
     if difference >= WATCHDOG_ERROR:
         error_message = (
             "actual movement of "
             + str(delta_pos)
             + " exceeds expected movement of "
             + str(expected_speed)
+            + f" by {difference}, an error of "
+            + f"{round(difference/expected_speed, 3):+}%"
         )
-        if expected_speed:
-            error_message += f" by {difference}, an error of {round(difference/expected_speed, 3):+}%"
         raise WatchdogException(error_message)
-    if watchdog_stalled_frames > STALLED_FRAMES_ALLOWANCE:
+    if watchdog_stalled_frames > WATCHDOG_STALLED_FRAME_ALLOWANCE:
         raise WatchdogException("stalled frames allowance exceeded")
 
-    # prepare for next time
+    # Prepare for next time
+    global watchdog_max_error
     watchdog_max_error = max(difference, watchdog_max_error)
-    watchdog_state["pos"] = POS()
-    watchdog_state["throttle"] = MOTOR.throttle
-    watchdog_state["time"] = monotonic_ns()
 
 
-# 3.98333 in 5 sec at throttle 0.4 but stalling out!
-# 8.3875 in 5 sec at throttle 0.5
-# 12.1208 in 5 sec at throttle 0.6
+# if __name__ == "__main__":
+#     go_to(2000)
+#     go_to(0)
+#     analyze_debug_log()
+#     csv_print_analysis()
 
-"""
-Single step FORWARD fails without a sleep, even a 0.001 sleep.
-Everything else works fine.
-
-Microstep hums in intermediate positions, silent on %16==0, quiet on
-%16==8, progressively louder between.
-
-MICROSTEP -- 3200 steps per 360
-INTERLEAVE -- 400 steps per 360
-SINGLE -- 200 steps per 360
-DOUBLE -- 200 steps per 360
-"""
 
 """
 https://engineering.stackexchange.com/questions/36386/how-can-i-implement-s-curve-motion-profile-on-mobile-robotic-platform-wheeled
