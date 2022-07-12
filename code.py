@@ -1,4 +1,4 @@
-# aautocopy
+# autocopy
 
 # built-in imports
 import board
@@ -366,9 +366,9 @@ def watchdog():
     # Wow we feel about it
     if difference >= WATCHDOG_ERROR:
         error_message = (
-            "actual movement of "
-            + str(delta_pos)
-            + " exceeds expected movement of "
+            "actual speed of "
+            + str(speed)
+            + " does not match expected speed of "
             + str(expected_speed)
             + f" by {difference}, an error of "
             + f"{round(difference/expected_speed, 3):+}%"
@@ -381,8 +381,10 @@ def watchdog():
 # if __name__ == "__main__":
 #     go_to(2000)
 #     go_to(0)
-#     analyze_debug_log()
+#     if not len(debug_analysis):
+#         analyze_debug_log()
 #     csv_print_analysis()
+#     print(f"watchdog_max_error: {watchdog_max_error}")
 
 
 """
