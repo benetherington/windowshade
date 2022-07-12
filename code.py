@@ -359,6 +359,10 @@ def watchdog():
         else:
             watchdog_stalled_frames = 0
 
+    # Prepare for next time
+    global watchdog_max_error
+    watchdog_max_error = max(difference, watchdog_max_error)
+
     # Wow we feel about it
     if difference >= WATCHDOG_ERROR:
         error_message = (
@@ -372,10 +376,6 @@ def watchdog():
         raise WatchdogException(error_message)
     if watchdog_stalled_frames > WATCHDOG_STALLED_FRAME_ALLOWANCE:
         raise WatchdogException("stalled frames allowance exceeded")
-
-    # Prepare for next time
-    global watchdog_max_error
-    watchdog_max_error = max(difference, watchdog_max_error)
 
 
 # if __name__ == "__main__":
