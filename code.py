@@ -151,6 +151,8 @@ def get_expected_speed(throttle):
 def get_required_throttle(speed):
     # Calculates throttle. NOTE: does not work outside of expected speed
     # range (12-60 detents/sec)!
+    if speed == 0:
+        return 0
     _dir = copysign(1, speed)
     abs_throttle = abs((speed + 2.13) / 129)
     abs_bounded = bound(MIN_THROTTLE, abs_throttle, MAX_THROTTLE)
