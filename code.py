@@ -43,6 +43,7 @@ watchdog_settle_curve = (
 )
 WATCHDOG_SETTLE_NS = 4.9e8  # The point at which the curve is invalid
 WATCHDOG_ERROR = 15
+WATCHDOG_THROTTLE_WINDOW = 3
 WATCHDOG_STALL_SPEED = 10
 WATCHDOG_STALLED_FRAME_ALLOWANCE = 2
 
@@ -318,7 +319,7 @@ def add_watchdog_state():
     watchdog_last_time = monotonic_ns()
     watchdog_last_pos = POS()
 
-    while len(watchdog_throttle_stack) > 3:
+    while len(watchdog_throttle_stack) > WATCHDOG_THROTTLE_WINDOW - 1:
         watchdog_throttle_stack.pop(0)
     watchdog_throttle_stack.append(MOTOR.throttle or 0)
 
