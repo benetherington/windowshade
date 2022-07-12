@@ -61,15 +61,15 @@ def analyze_debug_log():
         prev_mono, prev_throttle, prev_pos, prev_req_speed = debug_log[prev_idx]
         mono, throttle, pos, req_speed = debug_log[prev_idx + 1]
 
-        delta_mono = mono - prev_mono
+        delta_time = mono - prev_mono
         delta_pos = pos - prev_pos
-        speed = delta_pos / delta_mono * 100_000_000
+        speed = delta_pos / delta_time * 100_000_000
 
-        debug_analysis.append((mono, pos, speed, prev_throttle))
+        debug_analysis.append((mono, pos, speed, prev_throttle, prev_req_speed))
 
 
 def csv_print_analysis():
-    output = "time,pos,speed,throttle\n"
+    output = "time,pos,speed,throttle,req_speed\n"
     for analyzed in debug_analysis:
         output += ",".join(map(str, analyzed)) + "\n"
     print(output)
@@ -77,25 +77,30 @@ def csv_print_analysis():
 
 def pretty_print_analysis():
     # rearrange logs into values
-    mono_list, pos_list, speed_list, throttle_list = zip(*debug_analysis)
+    mono_list, pos_list, speed_list, throttle_list, requested_list = zip(
+        *debug_analysis
+    )
 
     # convert values to strings
     mono_list = list(map(str, mono_list))
     pos_list = list(map(str, pos_list))
     speed_list = list(map(str, speed_list))
     throttle_list = list(map(str, throttle_list))
+    requested_list = list(map(str, requested_list))
 
     # find each longest string
     longest_mono = max(map(len, mono_list))
     longest_pos = max(map(len, pos_list))
     longest_speed = max(map(len, speed_list))
     longest_throttle = max(map(len, throttle_list))
+    longest_requested = max(map(len, requested_list))
 
     # don't run shorter than the header
     mono_length = max(longest_mono, len("time"))
     pos_length = max(longest_pos, len("pos"))
     speed_length = max(longest_speed, len("speed"))
     throttle_length = max(longest_throttle, len("throttle"))
+    requested_length = max(longest_requested, len("requested speed"))
 
     # print headers
     print(
@@ -105,6 +110,7 @@ def pretty_print_analysis():
                 "pos".center(pos_length),
                 "speed".center(speed_length),
                 "throttle".center(throttle_length),
+                "requested speed".center(requested_length),
             )
         )
     )
@@ -115,6 +121,7 @@ def pretty_print_analysis():
         pos = pos_list[idx]
         speed = speed_list[idx]
         throttle = throttle_list[idx]
+        requested = requested_list[idx]
         print(
             " | ".join(
                 (
@@ -122,6 +129,7 @@ def pretty_print_analysis():
                     pos.center(pos_length),
                     speed.center(speed_length),
                     throttle.center(throttle_length),
+                    requested.center(requested_length),
                 )
             )
         )
@@ -236,6 +244,9 @@ def go_to(target):
     # create curve iterator
     speed_curve = trapezoid_iter(target)
 
+    # capture initial log point
+    debug_log.append((monotonic_ns(), 0, POS(), 0))
+
     # "hand control" to iterator
     speed = throttle = None
     try:
@@ -268,7 +279,7 @@ def go_to(target):
         traceback.print_exception(None, e, e.__traceback__)
 
     # capture final log point
-    debug_log.append((monotonic_ns(), throttle, POS(), speed))
+    debug_log.append((monotonic_ns(), 0, POS(), 0))
 
 
 """ WatchdogException:
