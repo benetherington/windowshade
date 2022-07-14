@@ -39,10 +39,6 @@ DEBUG_MOTOR = False
 """
 WATCHDOG CONFIG
 """
-watchdog_settle_curve = (
-    lambda x: 50.3 + -3.86e-07 * x + 1.11e-15 * pow(x, 2) + -1.08e-24 * pow(x, 3)
-)  # Poly regression from partial load data
-WATCHDOG_SETTLE_NS = 4.9e8  # The point at which the curve is invalid
 WATCHDOG_ERROR = 15
 WATCHDOG_THROTTLE_WINDOW = 3
 WATCHDOG_STALL_SPEED = 10
@@ -180,14 +176,18 @@ def bound(_min, value, _max):
 
 
 def get_expected_speed(throttle):
-    # Calculates speed in encoder detents per second. NOTE: does not work
-    # outside of expected throttle range (0.5-1)!
+    """
+    Calculates speed in detents per second for a given throttle value. Does not
+    anticipate lag due to acceleration.
+    """
     return 129 * throttle - 2.13
 
 
 def get_required_throttle(speed):
-    # Calculates throttle. NOTE: does not work outside of expected speed
-    # range (12-60 detents/sec)!
+    """
+    Calculates throttle to maintain a given speed (detents/sec). Does not anticipate lag
+    due to acceleration.
+    """
     if speed == 0:
         return 0
     _dir = copysign(1, speed)
@@ -197,6 +197,10 @@ def get_required_throttle(speed):
 
 
 def trapezoid_iter(target):
+    """
+    Creates a trapezoid-shaped speed vs position curve for smooth movements.
+    Yields target speeds from three movement phases.
+    """
     # set initial values
     start = pos()
     _dir = copysign(1, target - start)
@@ -260,6 +264,11 @@ def move_relative(delta_pos):
 
 
 def go_to(target):
+    """
+    Changes windowshade position. Uses a trapezoid curve to generate desired
+    speed vs position, sets the throttle, creates debug logs, and watches for
+    exceptions from the watchdog.
+    """
     if target == pos():
         print("go_to got current position!")
         return
@@ -309,13 +318,14 @@ def go_to(target):
     store_encoder_position(pos())
 
 
-""" WatchdogException:
-    actual movement of 4 exceeds expected movement of -27.93 by 35.5861, an error of -1.274% """
-
 """
 WATCHDOG
 """
 # SETUP
+watchdog_settle_curve = (
+    lambda x: 50.3 + -3.86e-07 * x + 1.11e-15 * pow(x, 2) + -1.08e-24 * pow(x, 3)
+)  # Poly regression from partial load data
+WATCHDOG_SETTLE_NS = 4.9e8  # The point at which the curve is invalid
 watchdog_start = None
 watchdog_last_time = None
 watchdog_last_pos = None
@@ -325,6 +335,7 @@ watchdog_max_error = 0
 
 
 def reset_watchdog():
+    """Get a new watchdog 'session.'"""
     global watchdog_start, watchdog_last_time, watchdog_last_pos
     watchdog_start = monotonic_ns()
     watchdog_last_time = monotonic_ns()
@@ -336,25 +347,36 @@ def reset_watchdog():
 
 
 def throttle_average():
+    """Calculate the sliding window average."""
     return sum(watchdog_throttle_stack) / len(watchdog_throttle_stack)
 
 
 def add_watchdog_state():
+    """Store information about this frame."""
     global watchdog_last_time, watchdog_last_pos
     watchdog_last_time = monotonic_ns()
     watchdog_last_pos = pos()
 
+    # Advance sliding window
     while len(watchdog_throttle_stack) > WATCHDOG_THROTTLE_WINDOW - 1:
         watchdog_throttle_stack.pop(0)
     watchdog_throttle_stack.append(MOTOR.throttle or 0)
 
 
 class WatchdogException(Exception):
+    """Raised when movement expectations are not met."""
+
     pass
 
 
 # WATCHDOG
 def watchdog():
+    """
+    Called every control frame. Calculates expected speed based on a sliding
+    window throttle average. Adjusts expectation for initial acceleration.
+    Allows a specified error range, and raises an exception for out of family
+    values.
+    """
     # What happened this time
     delta_time = monotonic_ns() - watchdog_last_time
     if delta_time == 0:
