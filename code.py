@@ -3,6 +3,7 @@
 # built-in imports
 import board
 from math import copysign
+from microcontroller import nvm
 from time import monotonic_ns, sleep
 import traceback
 from rotaryio import IncrementalEncoder
@@ -46,6 +47,26 @@ WATCHDOG_ERROR = 15
 WATCHDOG_THROTTLE_WINDOW = 3
 WATCHDOG_STALL_SPEED = 10
 WATCHDOG_STALLED_FRAME_ALLOWANCE = 2
+
+"""
+NON-VOLATLE MEMORY
+"""
+
+
+def retrieve_encoder_position():
+    value = int.from_bytes(nvm[0:2], "big")
+    return value - 32767
+
+
+def store_encoder_position(value):
+    value += 32767
+    nvm[0:2] = value.to_bytes(2, "big")
+
+
+def retrieve_motor_starts_left():
+    value = nvm[2]
+    nvm[2] = max(0, value - 1)
+    return value
 
 
 """
@@ -141,7 +162,7 @@ POSITION
 """
 # setup
 ENCODER = IncrementalEncoder(board.D6, board.D5)
-POS = lambda: ENCODER.position
+ENCODER.position = retrieve_encoder_position()
 
 
 def reset_position():
@@ -221,7 +242,7 @@ MOVEMENT
 MAX_SPEED = get_expected_speed(MAX_THROTTLE)
 MIN_SPEED = get_expected_speed(MIN_THROTTLE)
 RAMP_SLOPE = (MAX_SPEED - MIN_SPEED) / RAMP_DISTANCE
-if DEBUG_MOTOR:
+if DEBUG_MOTOR or not retrieve_motor_starts_left():
     MOTOR = FM()
 else:
     mk = MotorKit(pwm_frequency=PWM_FREQUENCY)
@@ -281,7 +302,9 @@ def go_to(target):
         traceback.print_exception(None, e, e.__traceback__)
 
     # capture final log point
-    debug_log.append((monotonic_ns(), 0, POS(), 0))
+
+    # persist position
+    store_encoder_position(pos())
 
 
 """ WatchdogException:
