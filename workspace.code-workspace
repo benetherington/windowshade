@@ -22,7 +22,7 @@
 		"python.analysis.extraPaths": [
 			"c:\\Users\\Ben\\.vscode\\extensions\\joedevivo.vscode-circuitpython-0.1.17-win32-x64\\boards\\0x239A\\0x8026",
 			"c:\\Users\\Ben\\.vscode\\extensions\\joedevivo.vscode-circuitpython-0.1.17-win32-x64\\stubs",
-			"c:\\Users\\Ben\\AppData\\Roaming\\Code\\User\\globalStorage\\joedevivo.vscode-circuitpython\\bundle\\20220712\\adafruit-circuitpython-bundle-py-20220712\\lib"
+			"c:\\Users\\Ben\\AppData\\Roaming\\Code\\User\\globalStorage\\joedevivo.vscode-circuitpython\\bundle\\20220714\\adafruit-circuitpython-bundle-py-20220714\\lib"
 		]
 	}
 }
