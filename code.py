@@ -41,7 +41,7 @@ WATCHDOG CONFIG
 """
 watchdog_settle_curve = (
     lambda x: 50.3 + -3.86e-07 * x + 1.11e-15 * pow(x, 2) + -1.08e-24 * pow(x, 3)
-)
+)  # Poly regression from partial load data
 WATCHDOG_SETTLE_NS = 4.9e8  # The point at which the curve is invalid
 WATCHDOG_ERROR = 15
 WATCHDOG_THROTTLE_WINDOW = 3
@@ -76,7 +76,7 @@ DEBUG UTILITIES
 debug_log = []
 debug_analysis = []
 
-# from code import *; ws = WS(); ws.go_to(3000); ws.go_to(0); ws.analyze_debug_log(); ws.csv_print_analysis();
+
 def analyze_debug_log():
     # iterate over log, starting at the second element
     for prev_idx in range(len(debug_log) - 1):
@@ -163,6 +163,7 @@ POSITION
 # setup
 ENCODER = IncrementalEncoder(board.D6, board.D5)
 ENCODER.position = retrieve_encoder_position()
+pos = lambda: ENCODER.position
 
 
 def reset_position():
@@ -197,7 +198,7 @@ def get_required_throttle(speed):
 
 def trapezoid_iter(target):
     # set initial values
-    start = POS()
+    start = pos()
     _dir = copysign(1, target - start)
     target = target - 10 * _dir  # stop a little short
 
@@ -212,21 +213,21 @@ def trapezoid_iter(target):
 
     # calculate current throttle
     print("# RAMP UP")
-    while POS() * _dir <= end_ramp_up * _dir:
+    while pos() * _dir <= end_ramp_up * _dir:
         # calculate target speed based on progression through ramp distance
-        ramp_speed = RAMP_SLOPE * (POS() - start)
+        ramp_speed = RAMP_SLOPE * (pos() - start)
         target_speed = ramp_speed + MIN_SPEED * _dir
         # convert to an expected throttle value
         yield target_speed
 
     print("# CRUISE")
-    while POS() * _dir <= start_ramp_down * _dir:
+    while pos() * _dir <= start_ramp_down * _dir:
         yield MAX_SPEED * _dir
 
     print("# RAMP DOWN")
-    while POS() * _dir < target * _dir:
+    while pos() * _dir < target * _dir:
         # calculate target speed based on progression through ramp distance
-        ramp_speed = RAMP_SLOPE * (target - POS())
+        ramp_speed = RAMP_SLOPE * (target - pos())
         target_speed = ramp_speed + MIN_SPEED * _dir
         # convert to an expected throttle value
         yield target_speed
@@ -255,20 +256,20 @@ def stop():
 
 
 def move_relative(delta_pos):
-    go_to(POS() + delta_pos)
+    go_to(pos() + delta_pos)
 
 
 def go_to(target):
-    if target == POS():
+    if target == pos():
         print("go_to got current position!")
         return
-    print(f"Moving from {POS()} to {target}.")
+    print(f"Moving from {pos()} to {target}.")
 
     # create curve iterator
     speed_curve = trapezoid_iter(target)
 
     # capture initial log point
-    debug_log.append((monotonic_ns(), 0, POS(), 0))
+    debug_log.append((monotonic_ns(), 0, pos(), 0))
 
     # "hand control" to iterator
     speed = throttle = None
@@ -285,23 +286,24 @@ def go_to(target):
                 m.throttle = throttle
 
                 # log
-                debug_log.append((monotonic_ns(), throttle, POS(), speed))
+                debug_log.append((monotonic_ns(), throttle, pos(), speed))
 
                 # wait a bit
                 sleep(CONTROL_FRAME_LENGTH_MS)
     except StopIteration:
         # we're all good!
-        print(f"We arrived at {POS()}!")
+        print(f"We arrived at {pos()}!")
     except WatchdogException as e:
-        print(f"\n\nWe made it to {POS()}. ¯\_(ツ)_/¯")
+        print(f"\n\nWe made it to {pos()}. ¯\_(ツ)_/¯")
         traceback.print_exception(None, e, e.__traceback__)
         analyze_debug_log()
         pretty_print_analysis()
     except Exception as e:
-        print(f"We made it to {POS()}.")
+        print(f"We made it to {pos()}.")
         traceback.print_exception(None, e, e.__traceback__)
 
     # capture final log point
+    debug_log.append((monotonic_ns(), 0, pos(), 0))
 
     # persist position
     store_encoder_position(pos())
@@ -326,7 +328,7 @@ def reset_watchdog():
     global watchdog_start, watchdog_last_time, watchdog_last_pos
     watchdog_start = monotonic_ns()
     watchdog_last_time = monotonic_ns()
-    watchdog_last_pos = POS()
+    watchdog_last_pos = pos()
 
     global watchdog_throttle_stack, watchdog_stalled_frames
     watchdog_throttle_stack = [0]
@@ -340,7 +342,7 @@ def throttle_average():
 def add_watchdog_state():
     global watchdog_last_time, watchdog_last_pos
     watchdog_last_time = monotonic_ns()
-    watchdog_last_pos = POS()
+    watchdog_last_pos = pos()
 
     while len(watchdog_throttle_stack) > WATCHDOG_THROTTLE_WINDOW - 1:
         watchdog_throttle_stack.pop(0)
@@ -358,7 +360,7 @@ def watchdog():
     if delta_time == 0:
         return
     elapsed_time_ns = monotonic_ns() - watchdog_start
-    delta_pos = POS() - watchdog_last_pos
+    delta_pos = pos() - watchdog_last_pos
     speed = delta_pos / delta_time * 100_000_000
     add_watchdog_state()
 
@@ -401,27 +403,10 @@ def watchdog():
         raise WatchdogException("stalled frames allowance exceeded")
 
 
-# if __name__ == "__main__":
-#     go_to(2000)
-#     go_to(0)
-#     if not len(debug_analysis):
-#         analyze_debug_log()
-#     csv_print_analysis()
-#     print(f"watchdog_max_error: {watchdog_max_error}")
-
-
-"""
-https://engineering.stackexchange.com/questions/36386/how-can-i-implement-s-curve-motion-profile-on-mobile-robotic-platform-wheeled
-
-Sigmoid derivative
-# prepare
-distance = ( target - start )
-lamb = (MAX_ERROR/distance)
-beta = 4 * max_speed / distance
-charlie = 1/beta * math.log( (1-lamb)/lamb )
-
-# calculate current throttle
-e_pow = math.pow(math.e, -beta*(pos-charlie))
-throttle = (target-start) * (   beta*e_pow / math.pow((1+e_pow), 2)   )
-
-"""
+# from microcontroller import nvm; nvm[1] += 1
+if __name__ == "__main__":
+    go_to(0)
+    if not len(debug_analysis):
+        analyze_debug_log()
+    csv_print_analysis()
+    print(f"watchdog_max_error: {watchdog_max_error}")
